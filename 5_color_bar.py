@@ -8,15 +8,17 @@ import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QPlainTextEdit, QFileDialog,
-    QSizePolicy, QScrollArea, QSplitter, QCheckBox
+    QSizePolicy, QScrollArea, QCheckBox
 )
 from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QDoubleValidator
 
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.animation import FFMpegWriter
 from matplotlib.ticker import MultipleLocator, FuncFormatter
+
 
 # ===================== SETTINGS =====================
 FPS = 30
@@ -37,8 +39,8 @@ DEFAULT_CATEGORIES = """Temperatur
 Geräuschkulisse
 Lichtverhältnisse
 Sitzplatz
-Technische Arbeitsmittel (Soft- und Hardware)
-Hygiene (Sauberkeit am Arbeitsplatz, Küche, Toiletten)
+Technische Arbeitsmittel
+Hygiene
 """
 
 # Data rows, one CSV line per category, same number of columns each row
@@ -122,7 +124,6 @@ def parse_data_rows(text: str) -> np.ndarray:
             rows.append([float(p) for p in parts])
         except Exception:
             raise ValueError(f"Row {i} contains non-numeric values.")
-    # validate consistent columns
     ncols = len(rows[0])
     for i, r in enumerate(rows, start=1):
         if len(r) != ncols:
@@ -131,6 +132,8 @@ def parse_data_rows(text: str) -> np.ndarray:
 
 
 class AspectRatioWidget(QWidget):
+    """Keeps child centered and maintains a fixed aspect ratio (width/height)."""
+
     def __init__(self, child: QWidget, aspect: float, parent=None):
         super().__init__(parent)
         self._child = child
@@ -167,6 +170,10 @@ class MplCanvas(FigureCanvas):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.updateGeometry()
 
+    def wheelEvent(self, event):
+        # Let the parent scroll area handle the wheel (so page scroll works on hover)
+        event.ignore()
+
 
 class PlotFullscreenWindow(QMainWindow):
     def __init__(self, parent, plot_widget: QWidget, on_close_restore):
@@ -196,7 +203,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Animated Stacked Barh (Stable Export)")
 
-        # inputs
+        # -------- inputs --------
         self.figw_in = QLineEdit(DEFAULT_FIGW)
         self.figh_in = QLineEdit(DEFAULT_FIGH)
         self.anim_sec_in = QLineEdit(DEFAULT_ANIM_SEC)
@@ -225,7 +232,11 @@ class MainWindow(QMainWindow):
 
         self.min_text_in = QLineEdit(DEFAULT_MIN_TEXT_PCT)
 
-        # buttons
+        # allow reasonable range only (inches)
+        self.figw_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
+        self.figh_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
+
+        # -------- buttons --------
         self.start_btn = QPushButton("Start")
         self.stop_btn = QPushButton("Stop")
         self.export_btn = QPushButton("Export MP4")
@@ -238,35 +249,65 @@ class MainWindow(QMainWindow):
 
         self.status = QLabel("")
 
-        # plot
+        # -------- plot --------
         self.canvas = MplCanvas()
         self.ax = self.canvas.ax
-        self.aspect_wrap = AspectRatioWidget(self.canvas, aspect=float(DEFAULT_FIGW) / float(DEFAULT_FIGH))
+        self.aspect_wrap = AspectRatioWidget(
+            self.canvas, aspect=float(DEFAULT_FIGW) / float(DEFAULT_FIGH)
+        )
 
-        self.plot_scroll = QScrollArea()
-        self.plot_scroll.setFrameShape(QScrollArea.NoFrame)
-        self.plot_scroll.setWidgetResizable(False)
-        self.plot_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.plot_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.plot_scroll.setWidget(self.aspect_wrap)
+        # Inner wrapper that will center the plot
+        self.plot_inner = QWidget()
+        inner_lay = QHBoxLayout(self.plot_inner)
+        inner_lay.setContentsMargins(0, 0, 0, 0)
+        inner_lay.addStretch(1)
+        inner_lay.addWidget(self.aspect_wrap)
+        inner_lay.addStretch(1)
 
-        # controls layout
+        # Scroll area: full width, horizontal scroll when needed
+        self.plot_hscroll = QScrollArea()
+        self.plot_hscroll.setFrameShape(QScrollArea.NoFrame)
+        self.plot_hscroll.setWidgetResizable(True)  # needed for centering
+        self.plot_hscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.plot_hscroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.plot_hscroll.setWidget(self.plot_inner)
+
+        # Plot container
+        self.plot_container = QWidget()
+        pl = QVBoxLayout(self.plot_container)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.addWidget(self.plot_hscroll)
+
+        # Make it expand to full width (prevents "ultra narrow")
+        self.plot_hscroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.plot_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        # -------- controls layout --------
         controls = QWidget()
         cl = QVBoxLayout(controls)
 
-        r1 = QWidget(); l1 = QHBoxLayout(r1)
-        l1.addWidget(QLabel("Fig W")); l1.addWidget(self.figw_in)
-        l1.addWidget(QLabel("Fig H")); l1.addWidget(self.figh_in)
+        r1 = QWidget()
+        l1 = QHBoxLayout(r1)
+        l1.addWidget(QLabel("Fig W"))
+        l1.addWidget(self.figw_in)
+        l1.addWidget(QLabel("Fig H"))
+        l1.addWidget(self.figh_in)
         cl.addWidget(r1)
 
-        r2 = QWidget(); l2 = QHBoxLayout(r2)
-        l2.addWidget(QLabel("Anim sec")); l2.addWidget(self.anim_sec_in)
-        l2.addWidget(QLabel("Pause sec")); l2.addWidget(self.pause_sec_in)
+        r2 = QWidget()
+        l2 = QHBoxLayout(r2)
+        l2.addWidget(QLabel("Anim sec"))
+        l2.addWidget(self.anim_sec_in)
+        l2.addWidget(QLabel("Pause sec"))
+        l2.addWidget(self.pause_sec_in)
         cl.addWidget(r2)
 
-        r3 = QWidget(); l3 = QHBoxLayout(r3)
-        l3.addWidget(QLabel("X max")); l3.addWidget(self.xmax_in)
-        l3.addWidget(QLabel("X tick")); l3.addWidget(self.xtick_in)
+        r3 = QWidget()
+        l3 = QHBoxLayout(r3)
+        l3.addWidget(QLabel("X max"))
+        l3.addWidget(self.xmax_in)
+        l3.addWidget(QLabel("X tick"))
+        l3.addWidget(self.xtick_in)
         cl.addWidget(r3)
 
         cl.addWidget(QLabel("Categories (one per line):"))
@@ -284,12 +325,14 @@ class MainWindow(QMainWindow):
         cl.addWidget(self.show_percent_cb)
         cl.addWidget(self.show_values_cb)
 
-        r4 = QWidget(); l4 = QHBoxLayout(r4)
+        r4 = QWidget()
+        l4 = QHBoxLayout(r4)
         l4.addWidget(QLabel("Min segment width to show text (%)"))
         l4.addWidget(self.min_text_in)
         cl.addWidget(r4)
 
-        btnrow = QWidget(); bl = QHBoxLayout(btnrow)
+        btnrow = QWidget()
+        bl = QHBoxLayout(btnrow)
         bl.addWidget(self.start_btn)
         bl.addWidget(self.stop_btn)
         bl.addWidget(self.export_btn)
@@ -297,20 +340,22 @@ class MainWindow(QMainWindow):
         cl.addWidget(btnrow)
 
         cl.addWidget(self.status)
-        cl.addStretch(1)
 
-        # splitter
-        self.splitter = QSplitter(Qt.Vertical)
-        self.splitter.addWidget(controls)
-        self.splitter.addWidget(self.plot_scroll)
-        self.splitter.setSizes([560, 800])
+        # -------- One-page scroll: controls + plot together --------
+        page = QWidget()
+        self.page_lay = QVBoxLayout(page)
+        self.page_lay.addWidget(controls)
+        self.page_lay.addWidget(self.plot_container)  # no stretch spacer here
 
-        central = QWidget()
-        main = QVBoxLayout(central)
-        main.addWidget(self.splitter)
-        self.setCentralWidget(central)
+        self.page_scroll = QScrollArea()
+        self.page_scroll.setWidgetResizable(True)
+        self.page_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.page_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.page_scroll.setWidget(page)
+        self.setCentralWidget(self.page_scroll)
 
-        # animation
+        # -------- animation --------
         self.frame = 0
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.step)
@@ -325,7 +370,15 @@ class MainWindow(QMainWindow):
             self._apply_debounce.start(AUTO_APPLY_DEBOUNCE_MS)
 
         # triggers
-        for w in [self.figw_in, self.figh_in, self.anim_sec_in, self.pause_sec_in, self.xmax_in, self.xtick_in, self.min_text_in]:
+        for w in [
+            self.figw_in,
+            self.figh_in,
+            self.anim_sec_in,
+            self.pause_sec_in,
+            self.xmax_in,
+            self.xtick_in,
+            self.min_text_in,
+        ]:
             w.textChanged.connect(schedule_heavy_rebuild)
         self.cats_in.textChanged.connect(schedule_heavy_rebuild)
         self.data_in.textChanged.connect(schedule_heavy_rebuild)
@@ -336,7 +389,7 @@ class MainWindow(QMainWindow):
 
         # fullscreen
         self._plot_full_win = None
-        self._placeholder = None
+        self._plot_index = -1
 
         # state
         self.categories = []
@@ -373,9 +426,20 @@ class MainWindow(QMainWindow):
         h_px = int(self.figh * PREVIEW_DPI)
         w_px = max(w_px, 700)
         h_px = max(h_px, 350)
+
+        # actual plot widget size (can be wider than viewport)
         self.aspect_wrap.setFixedSize(w_px, h_px)
         self.aspect_wrap.updateGeometry()
-        self.plot_scroll.viewport().update()
+
+        # keep centering working + allow horizontal scroll when needed
+        self.plot_inner.setMinimumWidth(w_px)
+        self.plot_inner.setMinimumHeight(h_px)
+
+        # prevent "ultra short": make the plot area show full height
+        sb_h = self.plot_hscroll.horizontalScrollBar().sizeHint().height()
+        self.plot_hscroll.setFixedHeight(h_px + sb_h + 4)
+
+        self.page_scroll.viewport().update()
         QApplication.processEvents()
 
     def open_plot_fullscreen(self):
@@ -383,18 +447,17 @@ class MainWindow(QMainWindow):
             self._plot_full_win.activateWindow()
             return
 
-        self._placeholder = QWidget()
-        self.splitter.replaceWidget(1, self._placeholder)
+        # remove from page layout + detach
+        self._plot_index = self.page_lay.indexOf(self.plot_container)
+        self.page_lay.removeWidget(self.plot_container)
+        self.plot_container.setParent(None)
 
         def restore():
-            self.splitter.replaceWidget(1, self.plot_scroll)
-            self.splitter.setSizes([560, 800])
+            insert_at = self._plot_index if self._plot_index >= 0 else self.page_lay.count()
+            self.page_lay.insertWidget(insert_at, self.plot_container)
             self._plot_full_win = None
-            if self._placeholder is not None:
-                self._placeholder.deleteLater()
-                self._placeholder = None
 
-        self._plot_full_win = PlotFullscreenWindow(self, self.plot_scroll, restore)
+        self._plot_full_win = PlotFullscreenWindow(self, self.plot_container, restore)
         self._plot_full_win.showFullScreen()
 
     def start_animation(self):
@@ -412,9 +475,8 @@ class MainWindow(QMainWindow):
             ax.spines[spine].set_visible(False)
 
         ax.grid(True, axis="x", linestyle="--", alpha=0.3)
-
-        ax.tick_params(axis='x', which='major', length=0, labelsize=8)
-        ax.tick_params(axis='y', which='major', length=0, labelsize=8)
+        ax.tick_params(axis="x", which="major", length=0, labelsize=8)
+        ax.tick_params(axis="y", which="major", length=0, labelsize=8)
 
     def _apply_x_format(self, ax):
         ax.set_xlim(0, self.xmax)
@@ -438,7 +500,6 @@ class MainWindow(QMainWindow):
 
         self._apply_x_format(ax)
 
-        # bars containers
         self.bars = []
         for j in range(self.n_cols):
             bc = ax.barh(
@@ -446,21 +507,22 @@ class MainWindow(QMainWindow):
                 np.zeros(self.n_rows),
                 color=self.colors[j],
                 height=0.6,
-                left=np.zeros(self.n_rows)
+                left=np.zeros(self.n_rows),
             )
             self.bars.append(bc)
 
-        # texts[col][row]
-        self.texts = [[
-            ax.text(
-                0, i, "",
-                color="white", va="center", ha="center",
-                fontsize=8, weight="bold", alpha=1
-            )
-            for i in range(self.n_rows)
-        ] for _ in range(self.n_cols)]
+        self.texts = [
+            [
+                ax.text(
+                    0, i, "",
+                    color="white", va="center", ha="center",
+                    fontsize=8, weight="bold", alpha=1
+                )
+                for i in range(self.n_rows)
+            ]
+            for _ in range(self.n_cols)
+        ]
 
-        # legend
         ax.legend(
             self.seg_labels,
             loc="lower center",
@@ -469,7 +531,7 @@ class MainWindow(QMainWindow):
             fontsize=8,
             frameon=False,
             handletextpad=0.4,
-            columnspacing=1.0
+            columnspacing=1.0,
         )
 
         self.canvas.figure.subplots_adjust(left=0.27, right=0.97, top=0.93, bottom=0.18)
@@ -498,10 +560,9 @@ class MainWindow(QMainWindow):
             self.xtick = parse_positive_float(self.xtick_in.text(), "X tick")
             self.min_text_pct = parse_nonneg_float(self.min_text_in.text(), "Min text width (%)")
 
-            # read inputs
+            # inputs
             self.categories = parse_categories(self.cats_in.toPlainText())
             self.data = parse_data_rows(self.data_in.toPlainText())
-
             self.seg_labels = parse_lines(self.seg_labels_in.toPlainText())
             self.colors = parse_lines(self.seg_colors_in.toPlainText())
 
@@ -543,7 +604,6 @@ class MainWindow(QMainWindow):
         self.canvas.draw_idle()
 
     def update_frame(self, frame: int):
-        # progress 0..1 then hold
         if frame >= self.anim_frames:
             progress = 1.0
         else:
@@ -553,7 +613,6 @@ class MainWindow(QMainWindow):
         add_percent = self.show_percent_cb.isChecked()
         suffix = "%" if add_percent else ""
 
-        # cumulative left positions per row
         cum_left = np.zeros(self.n_rows, dtype=float)
 
         for i in range(self.n_rows):
@@ -572,7 +631,6 @@ class MainWindow(QMainWindow):
                 elif bar_progress >= end:
                     width = seg_len
                 else:
-                    # partial reveal inside this segment
                     width = (bar_progress - start)
 
                 rect = self.bars[j][i]
@@ -580,11 +638,8 @@ class MainWindow(QMainWindow):
                 rect.set_width(width * 100.0)
 
                 txt = self.texts[j][i]
-
-                # show only if the currently visible width is enough
                 visible_pct = width * 100.0
                 if show_values and visible_pct >= self.min_text_pct:
-                    # count-up inside the segment
                     frac = (width / seg_len) if seg_len > 0 else 0.0
                     val = float(self.data[i, j] * frac)
                     x_mid = rect.get_x() + (visible_pct / 2.0)
@@ -603,7 +658,7 @@ class MainWindow(QMainWindow):
         final_path, _ = QFileDialog.getSaveFileName(
             self, "Save animation as MP4",
             "stacked_barh.mp4",
-            "MP4 Video (*.mp4)"
+            "MP4 Video (*.mp4)",
         )
         if not final_path:
             if was_running:
@@ -624,14 +679,13 @@ class MainWindow(QMainWindow):
             FigureCanvasAgg(fig)
             ax = fig.add_subplot(111)
 
-            # style
             ax.set_facecolor("white")
             fig.patch.set_facecolor("white")
             for spine in ["right", "bottom", "left", "top"]:
                 ax.spines[spine].set_visible(False)
             ax.grid(True, axis="x", linestyle="--", alpha=0.3)
-            ax.tick_params(axis='x', which='major', length=0, labelsize=8)
-            ax.tick_params(axis='y', which='major', length=0, labelsize=8)
+            ax.tick_params(axis="x", which="major", length=0, labelsize=8)
+            ax.tick_params(axis="y", which="major", length=0, labelsize=8)
 
             ax.set_ylim(-0.5, self.n_rows - 0.5)
             ax.set_yticks(range(self.n_rows))
@@ -646,7 +700,6 @@ class MainWindow(QMainWindow):
             else:
                 ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{int(x)}"))
 
-            # bars
             bars = []
             for j in range(self.n_cols):
                 bc = ax.barh(
@@ -654,15 +707,17 @@ class MainWindow(QMainWindow):
                     np.zeros(self.n_rows),
                     color=self.colors[j],
                     height=0.6,
-                    left=np.zeros(self.n_rows)
+                    left=np.zeros(self.n_rows),
                 )
                 bars.append(bc)
 
-            # texts
-            texts = [[
-                ax.text(0, i, "", color="white", va="center", ha="center", fontsize=8, weight="bold", alpha=1)
-                for i in range(self.n_rows)
-            ] for _ in range(self.n_cols)]
+            texts = [
+                [
+                    ax.text(0, i, "", color="white", va="center", ha="center", fontsize=8, weight="bold", alpha=1)
+                    for i in range(self.n_rows)
+                ]
+                for _ in range(self.n_cols)
+            ]
 
             ax.legend(
                 self.seg_labels,
@@ -672,7 +727,7 @@ class MainWindow(QMainWindow):
                 fontsize=8,
                 frameon=False,
                 handletextpad=0.4,
-                columnspacing=1.0
+                columnspacing=1.0,
             )
 
             fig.subplots_adjust(left=0.27, right=0.97, top=0.93, bottom=0.18)
@@ -682,7 +737,7 @@ class MainWindow(QMainWindow):
                 codec="libx264",
                 bitrate=2500,
                 extra_args=["-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"]
+                            "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2"],
             )
 
             show_values = self.show_values_cb.isChecked()
@@ -750,7 +805,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             msg = str(e)
-            if "ffmpeg" in msg.lower() or "FileNotFoundError" in msg:
+            if "ffmpeg" in msg.lower() or "filenotfounderror" in msg.lower():
                 msg += " | Tip: install FFmpeg and ensure it's on PATH."
             self.status.setText(f"❌ Export failed: {msg}")
             self.status.setStyleSheet("color: red;")
@@ -765,3 +820,4 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
