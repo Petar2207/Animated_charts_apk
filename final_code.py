@@ -179,8 +179,8 @@ class MainWindow(QMainWindow):
         )
         self.series_in.setFixedHeight(110)
 
-        self.ymin_in = QLineEdit("-50")
-        self.ymax_in = QLineEdit("96")
+        self.ymin_in = QLineEdit("0")
+        self.ymax_in = QLineEdit("100")
         self.ystep_in = QLineEdit("20")
 
         self.figw_in = QLineEdit("13")
@@ -871,5 +871,6 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
 
 
