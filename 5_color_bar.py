@@ -232,10 +232,6 @@ class MainWindow(QMainWindow):
 
         self.min_text_in = QLineEdit(DEFAULT_MIN_TEXT_PCT)
 
-        # allow reasonable range only (inches)
-        self.figw_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
-        self.figh_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
-
         # -------- buttons --------
         self.start_btn = QPushButton("Start")
         self.stop_btn = QPushButton("Stop")
@@ -824,3 +820,4 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
