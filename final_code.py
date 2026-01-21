@@ -663,11 +663,6 @@ class MainWindow(QMainWindow):
             figw = parse_positive_float(self.figw_in.text(), "Figure width")
             figh = parse_positive_float(self.figh_in.text(), "Figure height")
 
-            if not (1.0 <= figw <= 50.0):
-                raise ValueError("Figure width must be between 1 and 50 inches.")
-            if not (1.0 <= figh <= 50.0):
-                raise ValueError("Figure height must be between 1 and 50 inches.")
-
         except ValueError as e:
             self.status.setText(f"❌ {e}")
             self.status.setStyleSheet("color: red;")
