@@ -188,10 +188,6 @@ class MainWindow(QMainWindow):
         self.figw_in = QLineEdit("13")
         self.figh_in = QLineEdit("5")
 
-                # allow reasonable range only (inches)
-        self.figw_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
-        self.figh_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
-
         self.anim_dur_in = QLineEdit(str(DEFAULT_ANIMATION_DURATION))
         self.pause_dur_in = QLineEdit(str(DEFAULT_PAUSE_DURATION))
 
@@ -878,3 +874,4 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
