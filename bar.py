@@ -17,6 +17,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.animation import FFMpegWriter
 from matplotlib.ticker import FuncFormatter, MultipleLocator
+from PySide6.QtGui import QDoubleValidator  
 
 # ===================== SETTINGS =====================
 FPS = 30
@@ -93,6 +94,9 @@ def validate_hex_color(s: str) -> str:
     int(s[1:], 16)
     return s
 
+def wheelEvent(self, event):
+    # Let the parent scroll area handle the wheel
+    event.ignore()
 
 class AspectRatioWidget(QWidget):
     def __init__(self, child: QWidget, aspect: float, parent=None):
@@ -165,6 +169,9 @@ class MainWindow(QMainWindow):
         self.figh_in = QLineEdit(DEFAULT_FIGH)
         self.anim_sec_in = QLineEdit(DEFAULT_ANIM_SEC)
         self.pause_sec_in = QLineEdit(DEFAULT_PAUSE_SEC)
+        # allow reasonable range only (inches)
+        self.figw_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
+        self.figh_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
 
         self.cats_in = QPlainTextEdit(DEFAULT_CATEGORIES)
         self.cats_in.setFixedHeight(140)
@@ -226,12 +233,31 @@ class MainWindow(QMainWindow):
         self.ax = self.canvas.ax
         self.aspect_wrap = AspectRatioWidget(self.canvas, aspect=float(DEFAULT_FIGW) / float(DEFAULT_FIGH))
 
-        self.plot_scroll = QScrollArea()
-        self.plot_scroll.setFrameShape(QScrollArea.NoFrame)
-        self.plot_scroll.setWidgetResizable(False)
-        self.plot_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.plot_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.plot_scroll.setWidget(self.aspect_wrap)
+        # Inner wrapper that will center the plot
+        self.plot_inner = QWidget()
+        inner_lay = QHBoxLayout(self.plot_inner)
+        inner_lay.setContentsMargins(0, 0, 0, 0)
+        inner_lay.addStretch(1)
+        inner_lay.addWidget(self.aspect_wrap)
+        inner_lay.addStretch(1)
+
+        # Scroll area: full width, horizontal scroll when needed
+        self.plot_hscroll = QScrollArea()
+        self.plot_hscroll.setFrameShape(QScrollArea.NoFrame)
+        self.plot_hscroll.setWidgetResizable(True)  # needed for centering
+        self.plot_hscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.plot_hscroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.plot_hscroll.setWidget(self.plot_inner)
+
+        # Plot container
+        self.plot_container = QWidget()
+        pl = QVBoxLayout(self.plot_container)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.addWidget(self.plot_hscroll)
+
+        # Make it expand to full width (prevents "ultra narrow")
+        self.plot_hscroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.plot_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # controls layout
         controls = QWidget()
@@ -293,18 +319,20 @@ class MainWindow(QMainWindow):
         cl.addWidget(btnrow)
 
         cl.addWidget(self.status)
-        cl.addStretch(1)
 
-        # splitter
-        self.splitter = QSplitter(Qt.Vertical)
-        self.splitter.addWidget(controls)
-        self.splitter.addWidget(self.plot_scroll)
-        self.splitter.setSizes([430, 800])
+        # -------- One-page scroll: controls + plot together --------
+        page = QWidget()
+        self.page_lay = QVBoxLayout(page)
+        self.page_lay.addWidget(controls)
+        self.page_lay.addWidget(self.plot_container)  # no stretch spacer here
 
-        central = QWidget()
-        main = QVBoxLayout(central)
-        main.addWidget(self.splitter)
-        self.setCentralWidget(central)
+        self.page_scroll = QScrollArea()
+        self.page_scroll.setWidgetResizable(True)
+        self.page_scroll.setFrameShape(QScrollArea.NoFrame)
+        self.page_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.page_scroll.setWidget(page)
+        self.setCentralWidget(self.page_scroll)
 
         # animation
         self.frame = 0
@@ -369,7 +397,18 @@ class MainWindow(QMainWindow):
         h_px = max(h_px, 350)
         self.aspect_wrap.setFixedSize(w_px, h_px)
         self.aspect_wrap.updateGeometry()
-        self.plot_scroll.viewport().update()
+        # This makes scrollbars appear when needed, but keeps centering when not needed
+        if hasattr(self, "plot_inner"):
+            self.plot_inner.setMinimumWidth(w_px)
+            self.plot_inner.setMinimumHeight(h_px)
+
+        # Keep plot area visible (not “ultra short”)
+        if hasattr(self, "plot_hscroll"):
+            sb_h = self.plot_hscroll.horizontalScrollBar().sizeHint().height()
+            self.plot_hscroll.setFixedHeight(h_px + sb_h + 4)
+
+        if hasattr(self, "page_scroll"):
+            self.page_scroll.viewport().update()
         QApplication.processEvents()
 
     def _init_axes(self):
@@ -571,19 +610,17 @@ class MainWindow(QMainWindow):
         if self._plot_full_win is not None:
             self._plot_full_win.activateWindow()
             return
-
-        self._placeholder = QWidget()
-        self.splitter.replaceWidget(1, self._placeholder)
+        # remove from page layout + detach
+        self._plot_index = self.page_lay.indexOf(self.plot_container)
+        self.page_lay.removeWidget(self.plot_container)
+        self.plot_container.setParent(None)
 
         def restore():
-            self.splitter.replaceWidget(1, self.plot_scroll)
-            self.splitter.setSizes([430, 800])
+            insert_at = self._plot_index if self._plot_index >= 0 else self.page_lay.count()
+            self.page_lay.insertWidget(insert_at, self.plot_container)
             self._plot_full_win = None
-            if self._placeholder is not None:
-                self._placeholder.deleteLater()
-                self._placeholder = None
 
-        self._plot_full_win = PlotFullscreenWindow(self, self.plot_scroll, restore)
+        self._plot_full_win = PlotFullscreenWindow(self, self.plot_container, restore)
         self._plot_full_win.showFullScreen()
 
     def export_mp4(self):
@@ -726,3 +763,5 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
+
