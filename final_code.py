@@ -20,6 +20,8 @@ from PySide6.QtGui import QDoubleValidator
 
 
 FPS = 30
+DEFAULT_FIGW = "12"
+DEFAULT_FIGH = "5"
 DEFAULT_ANIMATION_DURATION = 10
 DEFAULT_PAUSE_DURATION = 5
 
@@ -218,7 +220,9 @@ class MainWindow(QMainWindow):
         # Plot
         self.canvas = MplCanvas()
         self.ax = self.canvas.ax
-        self.aspect_wrap = AspectRatioWidget(self.canvas, aspect=13 / 5)
+        self.aspect_wrap = AspectRatioWidget(
+            self.canvas, aspect=float(DEFAULT_FIGW) / float(DEFAULT_FIGH)
+        )
 
         # Inner wrapper that will center the plot
         self.plot_inner = QWidget()
@@ -871,6 +875,10 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
+
+
+
 
 
 
