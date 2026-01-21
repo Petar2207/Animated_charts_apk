@@ -138,10 +138,6 @@ def build_gradient_ring_rgba(values_pct: np.ndarray, colors_rgb: np.ndarray,
     extent = (-outer_radius, outer_radius, -outer_radius, outer_radius)
     return rgba, theta, alpha_ring, extent
 
-def wheelEvent(self, event):
-    # Let the parent scroll area handle the wheel
-    event.ignore()
-
 class AspectRatioWidget(QWidget):
     def __init__(self, child: QWidget, aspect: float, parent=None):
         super().__init__(parent)
@@ -178,7 +174,9 @@ class MplCanvas(FigureCanvas):
         super().__init__(fig)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.updateGeometry()
-
+    def wheelEvent(self, event):
+        # Let the parent scroll area handle the wheel
+        event.ignore()
 
 class PlotFullscreenWindow(QMainWindow):
     def __init__(self, parent, plot_widget: QWidget, on_close_restore):
@@ -814,6 +812,4 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
-
-
 
