@@ -16,9 +16,12 @@ from PySide6.QtCore import QTimer, Qt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.animation import FFMpegWriter
+from PySide6.QtGui import QDoubleValidator
 
 
 FPS = 30
+DEFAULT_FIGW = "12"
+DEFAULT_FIGH = "5"
 DEFAULT_ANIMATION_DURATION = 10
 DEFAULT_PAUSE_DURATION = 5
 
@@ -134,6 +137,10 @@ class MplCanvas(FigureCanvas):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.updateGeometry()
 
+    def wheelEvent(self, event):
+        # Let the parent scroll area handle the wheel
+        event.ignore()
+
 
 class PlotFullscreenWindow(QMainWindow):
     def __init__(self, parent, plot_widget: QWidget, on_close_restore):
@@ -174,12 +181,16 @@ class MainWindow(QMainWindow):
         )
         self.series_in.setFixedHeight(110)
 
-        self.ymin_in = QLineEdit("-50")
-        self.ymax_in = QLineEdit("96")
+        self.ymin_in = QLineEdit("0")
+        self.ymax_in = QLineEdit("100")
         self.ystep_in = QLineEdit("20")
 
         self.figw_in = QLineEdit("13")
         self.figh_in = QLineEdit("5")
+
+                # allow reasonable range only (inches)
+        self.figw_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
+        self.figh_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
 
         self.anim_dur_in = QLineEdit(str(DEFAULT_ANIMATION_DURATION))
         self.pause_dur_in = QLineEdit(str(DEFAULT_PAUSE_DURATION))
@@ -209,14 +220,36 @@ class MainWindow(QMainWindow):
         # Plot
         self.canvas = MplCanvas()
         self.ax = self.canvas.ax
-        self.aspect_wrap = AspectRatioWidget(self.canvas, aspect=13 / 5)
+        self.aspect_wrap = AspectRatioWidget(
+            self.canvas, aspect=float(DEFAULT_FIGW) / float(DEFAULT_FIGH)
+        )
 
-        self.plot_scroll = QScrollArea()
-        self.plot_scroll.setFrameShape(QScrollArea.NoFrame)
-        self.plot_scroll.setWidgetResizable(False)
-        self.plot_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.plot_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.plot_scroll.setWidget(self.aspect_wrap)
+        # Inner wrapper that will center the plot
+        self.plot_inner = QWidget()
+        inner_lay = QHBoxLayout(self.plot_inner)
+        inner_lay.setContentsMargins(0, 0, 0, 0)
+        inner_lay.addStretch(1)
+        inner_lay.addWidget(self.aspect_wrap)
+        inner_lay.addStretch(1)
+
+        # Scroll area: expands full width, but scrolls horizontally if plot is wider
+        self.plot_hscroll = QScrollArea()
+        self.plot_hscroll.setFrameShape(QScrollArea.NoFrame)
+        self.plot_hscroll.setWidgetResizable(True)  # IMPORTANT for centering
+        self.plot_hscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.plot_hscroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.plot_hscroll.setWidget(self.plot_inner)
+
+        # Plot container
+        self.plot_container = QWidget()
+        pl = QVBoxLayout(self.plot_container)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.addWidget(self.plot_hscroll)  # ✅ no alignment here
+
+        # Size policies so it doesn't become narrow
+        self.plot_hscroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.plot_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
 
         # Controls panel
         controls = QWidget()
@@ -289,16 +322,24 @@ class MainWindow(QMainWindow):
         cl.addWidget(self.status)
         cl.addStretch(1)
 
-        # Splitter
-        self.splitter = QSplitter(Qt.Vertical)
-        self.splitter.addWidget(controls)
-        self.splitter.addWidget(self.plot_scroll)
-        self.splitter.setSizes([380, 800])
+        # One-page scroll: controls + plot together
+        page = QWidget()
+        page_lay = QVBoxLayout(page)
+        page_lay.addWidget(controls)
+        page_lay.addWidget(self.plot_container)
+        page_lay.addStretch(1)
 
-        central = QWidget()
-        main = QVBoxLayout(central)
-        main.addWidget(self.splitter)
-        self.setCentralWidget(central)
+        self.page_scroll = QScrollArea()
+        self.page_scroll.setWidgetResizable(True)
+        self.page_scroll.setFrameShape(QScrollArea.NoFrame)
+
+        # ✅ only ONE vertical scrollbar
+        self.page_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.page_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        self.page_scroll.setWidget(page)
+        self.setCentralWidget(self.page_scroll)
+
 
         # Animation state
         self.frame = 0
@@ -355,29 +396,48 @@ class MainWindow(QMainWindow):
         h_px = int(self.figh * PREVIEW_DPI)
         w_px = max(w_px, 500)
         h_px = max(h_px, 300)
+
         self.aspect_wrap.setFixedSize(w_px, h_px)
         self.aspect_wrap.updateGeometry()
-        self.plot_scroll.viewport().update()
+
+        # This makes scrollbars appear when needed, but keeps centering when not needed
+        if hasattr(self, "plot_inner"):
+            self.plot_inner.setMinimumWidth(w_px)
+            self.plot_inner.setMinimumHeight(h_px)
+
+        # Keep plot area visible (not “ultra short”)
+        if hasattr(self, "plot_hscroll"):
+            sb_h = self.plot_hscroll.horizontalScrollBar().sizeHint().height()
+            self.plot_hscroll.setFixedHeight(h_px + sb_h + 4)
+
+        if hasattr(self, "page_scroll"):
+            self.page_scroll.viewport().update()
+
         QApplication.processEvents()
+
+
+
 
     def open_plot_fullscreen(self):
         if self._plot_full_win is not None:
             self._plot_full_win.activateWindow()
             return
 
-        self._placeholder = QWidget()
-        self.splitter.replaceWidget(1, self._placeholder)
+        # remove from page layout + detach
+        self._plot_index = self.page_lay.indexOf(self.plot_container)
+        self.page_lay.removeWidget(self.plot_container)
+        self.plot_container.setParent(None)
+
 
         def restore():
-            self.splitter.replaceWidget(1, self.plot_scroll)
-            self.splitter.setSizes([380, 800])
+            # Put it back under the scroll page
+            page = self.page_scroll.widget()
+            page.layout().insertWidget(1, self.plot_container)  # controls is index 0
             self._plot_full_win = None
-            if self._placeholder is not None:
-                self._placeholder.deleteLater()
-                self._placeholder = None
 
-        self._plot_full_win = PlotFullscreenWindow(self, self.plot_scroll, restore)
+        self._plot_full_win = PlotFullscreenWindow(self, self.plot_container, restore)
         self._plot_full_win.showFullScreen()
+
 
     def start_animation(self):
         self.timer.start(int(1000 / FPS))
@@ -498,7 +558,6 @@ class MainWindow(QMainWindow):
         r.addWidget(QLabel("Marker")); r.addWidget(mk_cb)
         r.addWidget(QLabel("Size"));   r.addWidget(ms_in)
         r.addWidget(QLabel("Edge"));   r.addWidget(mew_in)
-        r.addStretch(1)
 
         self._style_widgets_by_name[name] = {
             "linew": lw_in,
@@ -605,6 +664,13 @@ class MainWindow(QMainWindow):
             self.frame = 0
             self.animate_frame(self.frame)
             self.canvas.draw_idle()
+            figw = parse_positive_float(self.figw_in.text(), "Figure width")
+            figh = parse_positive_float(self.figh_in.text(), "Figure height")
+
+            if not (1.0 <= figw <= 50.0):
+                raise ValueError("Figure width must be between 1 and 50 inches.")
+            if not (1.0 <= figh <= 50.0):
+                raise ValueError("Figure height must be between 1 and 50 inches.")
 
         except ValueError as e:
             self.status.setText(f"❌ {e}")
