@@ -94,10 +94,6 @@ def validate_hex_color(s: str) -> str:
     int(s[1:], 16)
     return s
 
-def wheelEvent(self, event):
-    # Let the parent scroll area handle the wheel
-    event.ignore()
-
 class AspectRatioWidget(QWidget):
     def __init__(self, child: QWidget, aspect: float, parent=None):
         super().__init__(parent)
@@ -134,7 +130,9 @@ class MplCanvas(FigureCanvas):
         super().__init__(fig)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.updateGeometry()
-
+    def wheelEvent(self, event):
+        # Let the parent scroll area handle the wheel
+        event.ignore()
 
 class PlotFullscreenWindow(QMainWindow):
     def __init__(self, parent, plot_widget: QWidget, on_close_restore):
@@ -169,6 +167,9 @@ class MainWindow(QMainWindow):
         self.figh_in = QLineEdit(DEFAULT_FIGH)
         self.anim_sec_in = QLineEdit(DEFAULT_ANIM_SEC)
         self.pause_sec_in = QLineEdit(DEFAULT_PAUSE_SEC)
+        # allow reasonable range only (inches)
+        self.figw_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
+        self.figh_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
 
         self.cats_in = QPlainTextEdit(DEFAULT_CATEGORIES)
         self.cats_in.setFixedHeight(140)
@@ -760,6 +761,3 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
-
-
-
