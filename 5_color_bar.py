@@ -431,15 +431,19 @@ class MainWindow(QMainWindow):
         self.aspect_wrap.setFixedSize(w_px, h_px)
         self.aspect_wrap.updateGeometry()
 
-        # keep centering working + allow horizontal scroll when needed
-        self.plot_inner.setMinimumWidth(w_px)
-        self.plot_inner.setMinimumHeight(h_px)
+        # This makes scrollbars appear when needed, but keeps centering when not needed
+        if hasattr(self, "plot_inner"):
+            self.plot_inner.setMinimumWidth(w_px)
+            self.plot_inner.setMinimumHeight(h_px)
 
-        # prevent "ultra short": make the plot area show full height
-        sb_h = self.plot_hscroll.horizontalScrollBar().sizeHint().height()
-        self.plot_hscroll.setFixedHeight(h_px + sb_h + 4)
+        # Keep plot area visible (not “ultra short”)
+        if hasattr(self, "plot_hscroll"):
+            sb_h = self.plot_hscroll.horizontalScrollBar().sizeHint().height()
+            self.plot_hscroll.setFixedHeight(h_px + sb_h + 4)
 
-        self.page_scroll.viewport().update()
+        if hasattr(self, "page_scroll"):
+            self.page_scroll.viewport().update()
+            
         QApplication.processEvents()
 
     def open_plot_fullscreen(self):
@@ -820,4 +824,3 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
-
