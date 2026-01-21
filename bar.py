@@ -169,9 +169,6 @@ class MainWindow(QMainWindow):
         self.figh_in = QLineEdit(DEFAULT_FIGH)
         self.anim_sec_in = QLineEdit(DEFAULT_ANIM_SEC)
         self.pause_sec_in = QLineEdit(DEFAULT_PAUSE_SEC)
-        # allow reasonable range only (inches)
-        self.figw_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
-        self.figh_in.setValidator(QDoubleValidator(1.0, 50.0, 2))
 
         self.cats_in = QPlainTextEdit(DEFAULT_CATEGORIES)
         self.cats_in.setFixedHeight(140)
@@ -763,5 +760,6 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
 
 
