@@ -81,9 +81,6 @@ def validate_hex_color(s: str, name: str) -> str:
         raise ValueError(f"{name} must be hex like #B56400")
     int(s[1:], 16)
     return s
-def wheelEvent(self, event):
-    # Let the parent scroll area handle the wheel
-    event.ignore()
 
 class AspectRatioWidget(QWidget):
     def __init__(self, child: QWidget, aspect: float, parent=None):
@@ -121,6 +118,9 @@ class MplCanvas(FigureCanvas):
         super().__init__(fig)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.updateGeometry()
+    def wheelEvent(self, event):
+        # Let the parent scroll area handle the wheel (so page scroll works on hover)
+        event.ignore()
 
 
 class PlotFullscreenWindow(QMainWindow):
@@ -640,6 +640,8 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
+
+
 
 
 
