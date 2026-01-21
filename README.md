@@ -103,11 +103,12 @@ Charts are started as **independent Python processes**, so each tool runs cleanl
 
 ## 📂 Project Structure
 
-```text
 project-root/
 ├─ app.py                # Chart launcher
 ├─ requirements.txt
 ├─ run.bat               # Windows helper
+├─ bin/
+│  └─ ffmpeg.exe         # FFmpeg binary (Windows)
 ├─ charts/
 │  ├─ bar.py
 │  ├─ vertical_bar.py
@@ -122,6 +123,7 @@ project-root/
    ├─ pie.png
    ├─ gauge.png
    └─ line.png
+
 
 🧪 Requirements
 Python 3.9+ recommended
