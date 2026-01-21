@@ -423,8 +423,11 @@ class MainWindow(QMainWindow):
             self._plot_full_win.activateWindow()
             return
 
-        # Detach from current parent
+        # remove from page layout + detach
+        self._plot_index = self.page_lay.indexOf(self.plot_container)
+        self.page_lay.removeWidget(self.plot_container)
         self.plot_container.setParent(None)
+
 
         def restore():
             # Put it back under the scroll page
@@ -875,10 +878,3 @@ if __name__ == "__main__":
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
-
-
-
-
-
-
-
