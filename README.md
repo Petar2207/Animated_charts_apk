@@ -103,6 +103,8 @@ Charts are started as **independent Python processes**, so each tool runs cleanl
 
 ## 📂 Project Structure
 
+```text
+project-root/
 ├─ app.py                # Chart launcher
 ├─ requirements.txt
 ├─ run.bat               # Windows helper
