@@ -108,8 +108,6 @@ project-root/
 ├─ app.py                # Chart launcher
 ├─ requirements.txt
 ├─ run.bat               # Windows helper
-├─ bin/
-│  └─ ffmpeg.exe         # FFmpeg binary (Windows)
 ├─ charts/
 │  ├─ bar.py
 │  ├─ vertical_bar.py
@@ -117,6 +115,8 @@ project-root/
 │  ├─ pie chart.py
 │  ├─ gauge.py
 │  └─ final_code.py
+   └─ bin/
+     └─ ffmpeg.exe         # FFmpeg binary (Windows)
 └─ previews/
    ├─ bar.png
    ├─ horizontal.png
