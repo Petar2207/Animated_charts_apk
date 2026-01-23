@@ -20,6 +20,26 @@ from matplotlib.patches import Circle, Arc
 from matplotlib.ticker import FuncFormatter
 from PySide6.QtGui import QDoubleValidator  
 from PySide6.QtWidgets import QProgressDialog
+import shutil
+
+def _add_bundled_ffmpeg_to_path():
+    if shutil.which("ffmpeg"):
+        return
+
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base = sys._MEIPASS
+        ffmpeg_dir = os.path.join(base, "bin")
+        ffmpeg_exe = os.path.join(ffmpeg_dir, "ffmpeg.exe")
+        if os.path.exists(ffmpeg_exe):
+            os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+            return
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    ffmpeg_dir = os.path.join(here, "bin")
+    ffmpeg_exe = os.path.join(ffmpeg_dir, "ffmpeg.exe")
+    if os.path.exists(ffmpeg_exe):
+        os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ.get("PATH", "")
+        return
 
 # ===================== SETTINGS =====================
 FPS = 30
@@ -150,6 +170,7 @@ class PlotFullscreenWindow(QMainWindow):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        _add_bundled_ffmpeg_to_path()
         self.setWindowTitle("Gauge (Semi-circle) - Stable Export")
 
         # inputs
@@ -520,6 +541,7 @@ class MainWindow(QMainWindow):
 
     def export_mp4(self):
         was_running = self.timer.isActive()
+        _add_bundled_ffmpeg_to_path()
         self.timer.stop()
 
         final_path, _ = QFileDialog.getSaveFileName(
